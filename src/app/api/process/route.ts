@@ -1,47 +1,39 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { extractData } from '@/lib/extraction'; // Cambiamos a extractData
-import ExcelJS from 'exceljs';
+import { NextResponse } from 'next/server';
+import { extractData } from '@/lib/extraction';
 
-export async function POST(req: NextRequest) {
+// Definimos las reglas que nuestra aplicación buscará en los archivos
+const REGLAS_EXTRACCION = [
+  { nombre: "rfc", regex: "[A-ZÑ&]{3,4}\\d{6}[A-Z0-9]{3}" },
+  { nombre: "oficio", regex: "Oficio\\s*n[úu]m[eé]ro\\s*:?\\s*([\\w/-]+)" }
+];
+
+export async function POST(request: Request) {
   try {
-    const formData = await req.formData();
+    const formData = await request.formData();
     const files = formData.getAll('files') as File[];
 
-    if (files.length === 0) {
-      return NextResponse.json({ error: "No se subieron archivos" }, { status: 400 });
+    if (!files || files.length === 0) {
+      return NextResponse.json({ error: "No se recibieron archivos" }, { status: 400 });
     }
 
-    const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet('Datos Extraídos');
-    
-    worksheet.columns = [
-      { header: 'Archivo', key: 'name', width: 30 },
-      { header: 'RFC', key: 'rfc', width: 20 },
-      { header: 'Oficio', key: 'oficio', width: 20 },
-      { header: 'Fecha', key: 'fecha', width: 20 },
-    ];
-
+    // Procesamos todos los archivos enviados
+    const resultados = [];
     for (const file of files) {
-  const buffer = await file.arrayBuffer();
-  const data = await extractData(file); // Usamos la nueva función
-  
-  worksheet.addRow({
-    name: file.name,
-    ...data
-  });
-}
+      // Llamamos a nuestro motor de extracción pasando el archivo y las reglas
+      const data = await extractData(file, REGLAS_EXTRACCION);
+      resultados.push({
+        archivo: file.name,
+        ...data
+      });
+    }
 
-    // Generar archivo en memoria
-    const buffer = await workbook.xlsx.writeBuffer();
+    // Aquí retornarías los resultados. 
+    // Si quieres que el usuario descargue un Excel, 
+    // podrías devolver los datos como JSON y que el frontend genere el Excel.
+    return NextResponse.json({ registros: resultados });
 
-    return new NextResponse(buffer as never, {
-      headers: {
-        'Content-Disposition': 'attachment; filename="reporte_datos.xlsx"',
-        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      },
-    });
   } catch (error) {
-    console.error("Error procesando archivos:", error);
-    return NextResponse.json({ error: "Error interno al procesar" }, { status: 500 });
+    console.error("Error en el procesamiento:", error);
+    return NextResponse.json({ error: "Error al procesar los archivos" }, { status: 500 });
   }
 }
